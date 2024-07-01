@@ -117,9 +117,9 @@ module L1_cache #(
                     br_req = (i_addr[31:4]!=tag_bit[31:4]) ? set : clear;       //set: new branch taken
 
                 end
-                // if we didn't get an acknowledge keep the registers stable
                 else begin
-                    br_req = (i_addr[31:4]!=tag_bit[31:4]) ? br_req : clear;    //
+                    // if we didn't get the required acknowledge keep the branch request stable
+                    br_req = (i_addr[31:4]!=tag_bit[31:4]) ? br_req : clear;    
                 end
             end
             default: state = read;
