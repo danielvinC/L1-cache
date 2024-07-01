@@ -128,8 +128,7 @@ module L1_cache #(
     end
 
     always_ff @(posedge clock ) begin 
-        if (reset) 
-            {tag_bit, cache_line} <= 140'h0;
+	if (reset)  {tag_bit, cache_line} <= 140'h0;
         //update data
         else if(cache_update_valid) {tag_bit, cache_line} <= {l2addr, l2_line};
         else                        {tag_bit, cache_line} <= {tag_bit, cache_line};
