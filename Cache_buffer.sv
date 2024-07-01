@@ -1,6 +1,5 @@
 /*
 * Description: Level 1 cache 
-* Author: Dat
 */
 import fgmt::*;
 module L1_cache #(
@@ -47,6 +46,7 @@ module L1_cache #(
 
     // output assignments of internal registers
     assign cache_update_valid   = l2_valid_rsp && (l2_tid == CTID);
+    assign br_valid             = (tid_br == CTID);
     
 
     // FUNCTIONS
@@ -65,6 +65,7 @@ module L1_cache #(
                 4'b0100: instr_sl = 1;
                 4'b1000: instr_sl = 2;
                 4'b1100: instr_sl = 3;
+					default: instr_sl = 0;
             endcase
         return instr_sl;
     endfunction
@@ -75,63 +76,66 @@ module L1_cache #(
     
     /************************************************************************************************************************************/
     ///////////////////////////////////////////////////////////// MAIN BODY //////////////////////////////////////////////////////////////
-
-    // state parameters
-    // typedef enum {read, update} State;
-    // State state;    
-    logic read = 1'b1;
-    logic update = 1'b0;
-    logic state = active;
-
+    parameter read = 1'b1;
+    parameter update = 1'b0;
+    
 
     always_comb begin : cache_buffer
-        {tag_bit, cache_line} = cache_update_valid ? {l2addr, l2_line} : {tag_bit, cache_line};
-        l1_block_memory       = line_to_word(cache_line);
+        //update l1 cache
+        l1_block_memory       = cache_update_valid ? line_to_word(l2_line) : line_to_word(cache_line);
+        //update required instruction
+        i_addr                = active ? PCF : br_valid ? br_target : 1'b0;
+        icount                = offset_selector(i_addr[3:0]);
         instr_required        = instr_selector(icount, l1_block_memory);
-        br_valid              = (tid_br == CTID); 
-        i_addr                = active ? PCF : br_valid ? br_target : clear;
-        case (state)
+        //defautl 
+        br_req     = 1'b0;
+        instr      = 1'b0;
+        req_spec   = 1'b0;
+        req_refill = 1'b0;
+        case(active)
             // when active
             read: begin
-                    br_req = clear;
-                    //hit
-                    if (i_addr[31:4]==tag_bit[31:4]) begin
-                        icount = offset_selector(PCF[3:0]);
-                        instr = instr_required;
-                        req_spec = (icount == 3);
-                        req_refill = clear;
-                    end
-                    // miss
-                    else begin
-                        icount = clear;
-                        instr = bubble;
-                        req_spec = clear;
-                        req_refill = set;
-                    end
-                end 
+                br_req = 1'b0;
+                //hit
+                if (i_addr[31:4]==tag_bit[31:4]) begin
+                    instr = instr_required;
+                    req_spec = (icount == 3);
+                    req_refill = 1'b0;
+                end
+                // miss
+                else begin
+                    instr = bubble;
+                    req_spec = 1'b0;
+                    req_refill = 1'b1;        
+                end
+            end 
             // when inactive
             update: begin
                 instr = bubble;
-                req_spec = clear;
-                req_refill = clear;
-                if (br_valid) begin
-                    br_req = (i_addr[31:4]!=tag_bit[31:4]) ? set : clear;       //set: new branch taken
-
+                req_spec = 1'b0;
+                req_refill = 1'b0;
+                if (i_addr[31:4]==tag_bit[31:4]) begin
+                    br_req = 1'b0;       //clear
                 end
                 else begin
-                    // if we didn't get the required acknowledge keep the branch request stable
-                    br_req = (i_addr[31:4]!=tag_bit[31:4]) ? br_req : clear;    
+                    //if we didn't get the required acknowledge keep the branch request stable
+                    br_req = (br_valid) ? 1'b1 : br_req;   //set: new branch taken
                 end
             end
-            default: state = read;
+            default: active = read;
         endcase
+
     end
 
     always_ff @(posedge clock ) begin 
-        if (tid_fetch == CTID)
-            active <= set;
-        else
-            active <= clear;
+        if (reset) 
+            {tag_bit, cache_line} <= 140'h0;
+        //update data
+        else if(cache_update_valid) {tag_bit, cache_line} <= {l2addr, l2_line};
+        else                        {tag_bit, cache_line} <= {tag_bit, cache_line};
+        //cache status
+        if (tid_fetch == CTID) active <= read;
+        else                   active <= update;
     end
 
 endmodule
